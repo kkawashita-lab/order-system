@@ -1,49 +1,176 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>発注システム</title>
-    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <style>body { font-family: sans-serif; padding: 20px; }</style>
-  </head>
-  <body>
-    <h2>発注システム（テスト中）</h2>
-    <p>現在の状態: <span id="status" style="color:red; font-weight:bold;">1. 画面表示完了</span></p>
-    <p id="userId" style="background:#eee; padding:10px; word-break: break-all;"></p>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>発注システム</title>
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 0; padding: 0; background-color: #f8f9fa; padding-bottom: 80px; color: #333; }
+    .header { background-color: #4CAF50; color: white; padding: 15px; text-align: center; font-weight: bold; font-size: 18px; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .product-list { padding: 15px; }
+    .product-item { background: white; margin-bottom: 12px; padding: 15px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center; }
+    .product-info { flex-grow: 1; padding-right: 10px; }
+    .product-name { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
+    .product-desc { font-size: 12px; color: #777; margin-bottom: 6px; line-height: 1.4; }
+    .product-price { color: #e53935; font-weight: bold; font-size: 15px; }
+    .quantity-control { display: flex; align-items: center; }
+    .btn-qty { background: #f0f0f0; border: 1px solid #ddd; width: 34px; height: 34px; border-radius: 50%; font-size: 20px; display: flex; justify-content: center; align-items: center; cursor: pointer; color: #555; user-select: none; }
+    .btn-qty:active { background: #e0e0e0; }
+    .qty-value { width: 36px; text-align: center; font-weight: bold; font-size: 16px; }
+    .bottom-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: white; padding: 15px; box-sizing: border-box; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 100; }
+    .btn-order { background-color: #ff9800; color: white; border: none; width: 100%; padding: 16px; font-size: 18px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 6px rgba(255, 152, 0, 0.3); }
+    .btn-order:active { transform: translateY(2px); box-shadow: none; }
+    #loading { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(255,255,255,0.95); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index: 1000; }
+    .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #4CAF50; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 15px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
 
-    <script>
-      const LIFF_ID = "2009264170-CFBQvzwJ";
-      const statusEl = document.getElementById('status');
-      
-      statusEl.innerText = "2. LIFF初期化を開始します...";
+  <div id="loading">
+    <div class="spinner"></div>
+    <h3 id="loading-text" style="color:#555;">LINE情報を確認中...</h3>
+  </div>
 
-      try {
-        liff.init({ liffId: LIFF_ID })
-          .then(() => {
-            statusEl.innerText = "3. LIFF初期化成功！ログイン確認中...";
-            
-            if (!liff.isLoggedIn()) {
-              statusEl.innerText = "エラー: ログインしていません。";
-            } else {
-              statusEl.innerText = "4. ログイン確認OK。ID取得中...";
-              liff.getProfile()
-                .then(profile => {
-                  statusEl.innerText = "5. 全て成功しました！";
-                  statusEl.style.color = "blue";
-                  document.getElementById('userId').innerText = profile.userId;
-                })
-                .catch(err => {
-                  statusEl.innerText = "エラーA: プロフィール取得失敗 (" + err.message + ")";
-                });
-            }
-          })
-          .catch((err) => {
-            statusEl.innerText = "エラーB: LIFF初期化失敗 (" + err.message + ")";
+  <div class="header" id="store-name">店舗情報取得中...</div>
+
+  <div class="product-list" id="product-list"></div>
+
+  <div class="bottom-bar">
+    <button class="btn-order" onclick="confirmOrder()">発注内容を確認する</button>
+  </div>
+
+  <script>
+    // ★設定済みのLIFF_IDとGAS_URL
+    const LIFF_ID = "2009264170-CFBQvzwJ";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbx_eOGkJIRphob_r9ndPuwxgDUNmm0x2SO-QhODylgRMdhCmP5NQgL_bwpkoUashlH1/exec";
+
+    let productDataList = [];
+    let orderQuantities = {}; // 商品ごとの数量を管理 { "P001": 2, "P002": 0 }
+
+    // 1. 画面が開かれた時の処理
+    window.onload = function() {
+      liff.init({ liffId: LIFF_ID })
+        .then(() => {
+          if (!liff.isLoggedIn()) {
+            document.getElementById('loading-text').innerText = "エラー: ログインしていません。LINEアプリから開いてください。";
+            document.querySelector('.spinner').style.display = 'none';
+            return;
+          }
+          // IDを取得してGASへ通信開始
+          liff.getProfile().then(profile => {
+            fetchDataFromGAS(profile.userId);
+          }).catch(err => {
+            document.getElementById('loading-text').innerText = "プロフィール取得エラー";
           });
-      } catch(e) {
-        statusEl.innerText = "致命的エラー: " + e.message;
+        })
+        .catch(err => {
+          document.getElementById('loading-text').innerText = "システムエラー: LIFF初期化失敗";
+        });
+    };
+
+    // 2. GASと通信して店舗と商品情報をもらう処理
+    function fetchDataFromGAS(userId) {
+      document.getElementById('loading-text').innerText = "商品データを読み込み中...";
+      
+      // GETリクエストでIDを送信
+      const url = `${GAS_URL}?action=getStoreAndProducts&userId=${userId}`;
+      
+      fetch(url)
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            // 店舗名を表示
+            document.getElementById('store-name').innerText = data.store.storeName + " 様";
+            
+            // 商品一覧を変数に保存して画面に描画
+            productDataList = data.products;
+            renderProducts();
+            
+            // ローディング画面を隠す
+            document.getElementById('loading').style.display = 'none';
+          } else {
+            // 不正なユーザー（シートに登録がない等）の場合はエラー表示
+            document.getElementById('loading-text').innerText = data.message;
+            document.querySelector('.spinner').style.display = 'none';
+          }
+        })
+        .catch(error => {
+          document.getElementById('loading-text').innerText = "通信エラーが発生しました。電波の良いところで再度お試しください。";
+          document.querySelector('.spinner').style.display = 'none';
+        });
+    }
+
+    // 3. 商品一覧を画面に作る処理
+    function renderProducts() {
+      const listDiv = document.getElementById('product-list');
+      listDiv.innerHTML = '';
+      
+      productDataList.forEach(product => {
+        // 初期数量を0に設定
+        orderQuantities[product.id] = 0;
+        
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'product-item';
+        
+        // HTMLを組み立てて追加
+        itemDiv.innerHTML = `
+          <div class="product-info">
+            <div class="product-name">${product.name}</div>
+            <div class="product-desc">${product.desc}</div>
+            <div class="product-price">¥${product.price.toLocaleString()}</div>
+          </div>
+          <div class="quantity-control">
+            <div class="btn-qty" onclick="changeQty('${product.id}', -1)">−</div>
+            <div class="qty-value" id="qty-${product.id}">0</div>
+            <div class="btn-qty" onclick="changeQty('${product.id}', 1)">＋</div>
+          </div>
+        `;
+        listDiv.appendChild(itemDiv);
+      });
+    }
+
+    // 4. ＋−ボタンが押された時の処理
+    function changeQty(productId, delta) {
+      let currentQty = orderQuantities[productId];
+      let newQty = currentQty + delta;
+      
+      if (newQty < 0) newQty = 0; // 0未満にはしない
+      
+      orderQuantities[productId] = newQty;
+      document.getElementById(`qty-${productId}`).innerText = newQty;
+    }
+
+    // 5. 発注確認ボタンが押された時の処理
+    function confirmOrder() {
+      let orderDetails = [];
+      let totalAmount = 0;
+      
+      // 数量が1以上の商品だけを集める
+      productDataList.forEach(product => {
+        let qty = orderQuantities[product.id];
+        if (qty > 0) {
+          orderDetails.push(`・${product.name} × ${qty}`);
+          totalAmount += product.price * qty;
+        }
+      });
+      
+      if (orderDetails.length === 0) {
+        alert("発注する商品を選択してください。");
+        return;
       }
-    </script>
-  </body>
+      
+      // 確認のポップアップを作成
+      let confirmMessage = "以下の内容で発注しますか？\n\n";
+      confirmMessage += orderDetails.join("\n");
+      confirmMessage += `\n\n合計金額: ¥${totalAmount.toLocaleString()} (税抜)\n\n※OKを押すと発注が確定します。`;
+      
+      if (confirm(confirmMessage)) {
+        // ★今回はここまで！次回はここからGASにデータを送ります
+        alert("（テスト成功！）\n次はこの注文データをGASに送信して、発注履歴への書き込みとPDF送付を行う処理を作ります！");
+      }
+    }
+  </script>
+</body>
 </html>
