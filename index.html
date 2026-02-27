@@ -40,8 +40,135 @@
   <div class="bottom-bar">
     <button class="btn-order" onclick="confirmOrder()">発注内容を確認する</button>
   </div>
+<script>
+    const LIFF_ID = "2009264170-CFBQvzwJ";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbx_eOGkJIRphob_r9ndPuwxgDUNmm0x2SO-QhODylgRMdhCmP5NQgL_bwpkoUashlH1/exec";
 
-  <script>
+    let productDataList = [];
+    let orderQuantities = {};
+
+    window.onload = function() {
+      liff.init({ liffId: LIFF_ID }).then(() => {
+        if (!liff.isLoggedIn()) {
+          document.getElementById('loading-text').innerText = "エラー: LINEアプリから開いてください。";
+          document.querySelector('.spinner').style.display = 'none';
+          return;
+        }
+        liff.getProfile().then(profile => {
+          fetchDataFromGAS(profile.userId);
+        });
+      });
+    };
+
+    function fetchDataFromGAS(userId) {
+      document.getElementById('loading-text').innerText = "商品データを読み込み中...";
+      fetch(`${GAS_URL}?action=getStoreAndProducts&userId=${userId}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            document.getElementById('store-name').innerText = data.store.storeName + " 様";
+            productDataList = data.products;
+            renderProducts();
+            document.getElementById('loading').style.display = 'none';
+          } else {
+            document.getElementById('loading-text').innerText = data.message;
+            document.querySelector('.spinner').style.display = 'none';
+          }
+        });
+    }
+
+    function renderProducts() {
+      const listDiv = document.getElementById('product-list');
+      listDiv.innerHTML = '';
+      productDataList.forEach(product => {
+        orderQuantities[product.id] = 0;
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'product-item';
+        itemDiv.innerHTML = `
+          <div class="product-info">
+            <div class="product-name">${product.name}</div>
+            <div class="product-desc">${product.desc}</div>
+            <div class="product-price">¥${product.price.toLocaleString()}</div>
+          </div>
+          <div class="quantity-control">
+            <div class="btn-qty" onclick="changeQty('${product.id}', -1)">−</div>
+            <div class="qty-value" id="qty-${product.id}">0</div>
+            <div class="btn-qty" onclick="changeQty('${product.id}', 1)">＋</div>
+          </div>
+        `;
+        listDiv.appendChild(itemDiv);
+      });
+    }
+
+    function changeQty(productId, delta) {
+      let newQty = orderQuantities[productId] + delta;
+      if (newQty < 0) newQty = 0;
+      orderQuantities[productId] = newQty;
+      document.getElementById(`qty-${productId}`).innerText = newQty;
+    }
+
+    // --- ここから下が新しく追加した送信処理 ---
+    function confirmOrder() {
+      let orderDetails = [];
+      let totalAmount = 0;
+      
+      productDataList.forEach(product => {
+        let qty = orderQuantities[product.id];
+        if (qty > 0) {
+          orderDetails.push(`${product.name} × ${qty}`);
+          totalAmount += product.price * qty;
+        }
+      });
+      
+      if (orderDetails.length === 0) {
+        alert("発注する商品を選択してください。");
+        return;
+      }
+      
+      let confirmMessage = "以下の内容で発注しますか？\n\n" + orderDetails.join("\n") + `\n\n合計金額: ¥${totalAmount.toLocaleString()} (税抜)\n\n※OKを押すと発注が確定します。`;
+      
+      if (confirm(confirmMessage)) {
+        sendOrderToGAS(orderDetails, totalAmount);
+      }
+    }
+
+    function sendOrderToGAS(orderDetails, totalAmount) {
+      // ローディング画面を再表示して「処理中」にする
+      document.getElementById('loading').style.display = 'flex';
+      document.getElementById('loading-text').innerText = "発注を送信中...";
+
+      liff.getProfile().then(profile => {
+        const payload = {
+          action: "submitOrder",
+          userId: profile.userId,
+          details: orderDetails,
+          total: totalAmount
+        };
+
+        // POSTリクエストで裏側のGASにデータを投げる
+        fetch(GAS_URL, {
+          method: 'POST',
+          body: JSON.stringify(payload) // データをJSONという形式に変換
+        })
+        .then(response => response.json())
+        .then(data => {
+          document.getElementById('loading').style.display = 'none';
+          if (data.success) {
+            alert(`発注が完了しました！\n発注番号: ${data.orderId}\n\nLINEに控えのメッセージを送信しました。`);
+            liff.closeWindow(); // 成功したら自動でLIFF画面を閉じる
+          } else {
+            alert("エラー: " + data.message);
+          }
+        })
+        .catch(err => {
+          document.getElementById('loading').style.display = 'none';
+          alert("通信エラーが発生しました。");
+        });
+      });
+    }
+  </script>
+
+<!--   <script>
     // ★設定済みのLIFF_IDとGAS_URL
     const LIFF_ID = "2009264170-CFBQvzwJ";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbx_eOGkJIRphob_r9ndPuwxgDUNmm0x2SO-QhODylgRMdhCmP5NQgL_bwpkoUashlH1/exec";
@@ -171,6 +298,6 @@
         alert("（テスト成功！）\n次はこの注文データをGASに送信して、発注履歴への書き込みとPDF送付を行う処理を作ります！");
       }
     }
-  </script>
+  </script> -->
 </body>
 </html>
