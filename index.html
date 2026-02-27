@@ -146,9 +146,17 @@
         };
 
         // POSTリクエストで裏側のGASにデータを投げる
+        // fetch(GAS_URL, {
+        //   method: 'POST',
+        //   body: JSON.stringify(payload) // データをJSONという形式に変換
+        // })
+        // POSTリクエストで裏側のGASにデータを投げる
         fetch(GAS_URL, {
           method: 'POST',
-          body: JSON.stringify(payload) // データをJSONという形式に変換
+          headers: {
+            "Content-Type": "text/plain" // ★この3行を追加！（CORSエラー防止のため）
+          },
+          body: JSON.stringify(payload)
         })
         .then(response => response.json())
         .then(data => {
