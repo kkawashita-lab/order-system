@@ -71,8 +71,19 @@
             renderProducts();
             document.getElementById('loading').style.display = 'none';
           } else {
-            document.getElementById('loading-text').innerText = data.message;
-            document.querySelector('.spinner').style.display = 'none';
+            // 未登録の場合、管理者へ伝えるためのIDを画面に表示する
+            document.getElementById('loading').style.display = 'none'; // ローディングを消す
+            document.getElementById('store-name').innerText = "【未登録のユーザーです】";
+            document.getElementById('product-list').innerHTML = `
+              <div style="padding:20px; text-align:center;">
+                <p style="color:red; font-weight:bold;">${data.message}</p>
+                <p>あなたのLINEユーザーIDを管理者に伝えてください：</p>
+                <textarea style="width:100%; height:80px; padding:10px; box-sizing:border-box;">${liff.getDecodedIDToken().sub}</textarea>
+                <p style="font-size:12px; color:#666;">※このIDをコピーしてLINEで送信してください。</p>
+              </div>
+            `;
+            // 下の発注ボタンを隠す
+            document.querySelector('.bottom-bar').style.display = 'none';
           }
         });
     }
@@ -145,11 +156,6 @@
           total: totalAmount
         };
 
-        // POSTリクエストで裏側のGASにデータを投げる
-        // fetch(GAS_URL, {
-        //   method: 'POST',
-        //   body: JSON.stringify(payload) // データをJSONという形式に変換
-        // })
         // POSTリクエストで裏側のGASにデータを投げる
         fetch(GAS_URL, {
           method: 'POST',
