@@ -71,22 +71,64 @@
             renderProducts();
             document.getElementById('loading').style.display = 'none';
           } else {
-            // 未登録の場合、管理者へ伝えるためのIDを画面に表示する
-            document.getElementById('loading').style.display = 'none'; // ローディングを消す
+            // 未登録の場合、親切な案内と送信ボタンを表示する
+            document.getElementById('loading').style.display = 'none';
             document.getElementById('store-name').innerText = "【未登録のユーザーです】";
+            
+            const userId = liff.getDecodedIDToken().sub;
+            // LINEのトーク画面にメッセージを飛ばすためのURL
+            const lineMessageUrl = `https://line.me/R/oaMessage/@あなたのボットのID/?あなたのLINEユーザーIDを送信します：%0A${userId}`;
+
             document.getElementById('product-list').innerHTML = `
               <div style="padding:20px; text-align:center;">
-                <p style="color:red; font-weight:bold;">${data.message}</p>
-                <p>あなたのLINEユーザーIDを管理者に伝えてください：</p>
-                <textarea style="width:100%; height:80px; padding:10px; box-sizing:border-box;">${liff.getDecodedIDToken().sub}</textarea>
-                <p style="font-size:12px; color:#666;">※このIDをコピーしてLINEで送信してください。</p>
+                <p style="color:red; font-weight:bold; font-size:18px;">${data.message}</p>
+                <p style="font-size:14px; color:#555;">利用を開始するには、以下のIDを管理者に送信してください。</p>
+                
+                <div id="copy-target" style="background:#eee; padding:15px; border-radius:5px; word-break:break-all; font-family:monospace; margin-bottom:20px;">
+                  ${userId}
+                </div>
+
+                <button onclick="sendIdByLine('${userId}')" style="background:#06C755; color:white; border:none; width:100%; padding:15px; border-radius:8px; font-weight:bold; font-size:16px; margin-bottom:10px;">
+                  LINEでIDを送信する
+                </button>
+
+                <button onclick="copyToClipboard('${userId}')" style="background:#777; color:white; border:none; width:100%; padding:10px; border-radius:8px; font-weight:bold; font-size:14px;">
+                  IDのみをコピーする
+                </button>
               </div>
             `;
-            // 下の発注ボタンを隠す
             document.querySelector('.bottom-bar').style.display = 'none';
           }
         });
     }
+
+
+    // LINEでIDを送信する機能
+    function sendIdByLine(userId) {
+      // LIFFの機能を使って直接トーク画面にメッセージを送る
+      if (liff.isInClient()) {
+        liff.sendMessages([{
+          'type': 'text',
+          'text': "私のLINEユーザーIDを送信します：\n" + userId
+        }]).then(function() {
+          alert('IDを送信しました！管理者の承認をお待ちください。');
+          liff.closeWindow(); // 送信したら画面を閉じる
+        }).catch(function(error) {
+          alert('送信に失敗しました。コピーボタンをお試しください。');
+        });
+      }
+    }
+
+    // クリップボードにコピーする機能
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(function() {
+        alert('IDをクリップボードにコピーしました！');
+      }, function(err) {
+        alert('コピーに失敗しました。');
+      });
+    }
+
+
 
     function renderProducts() {
       const listDiv = document.getElementById('product-list');
